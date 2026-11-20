@@ -1,5 +1,6 @@
 package com.vulft.app.ui.apps
 
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -51,7 +52,7 @@ import kotlinx.coroutines.launch
 @Composable
 fun LinkSourcesDialog(u: AppUi, vm: AppPickerViewModel, onDismiss: () -> Unit) {
   val app = u.app
-  var tab by remember { mutableStateOf(0) }
+  var tab by remember { mutableIntStateOf(0) }
 
   AlertDialog(
     onDismissRequest = onDismiss,

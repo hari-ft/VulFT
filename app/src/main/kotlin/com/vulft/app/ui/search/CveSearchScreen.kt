@@ -127,11 +127,27 @@ fun CveSearchScreen(onBack: () -> Unit, onOpenCve: (String) -> Unit, vm: CveSear
         Button(onClick = { vm.search(query) }, enabled = canSearch && !(s.loading && s.results.isEmpty())) { Text("Search") }
       }
       LazyRow(contentPadding = PaddingValues(horizontal = 12.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-        items(Severity.all.take(4)) { sev ->
-          FilterChip(severity == sev, { severity = if (severity == sev) null else sev; vm.search(CveQuery(text, severity, kev, days)) },
-            label = { Text(Severity.label(sev)) })
+        // Same order and style as the main list: Exploited first, then a Severity dropdown (NVD accepts one severity).
+        item {
+          com.vulft.app.ui.list.SelectableChip(kev, "Exploited", { kev = !kev; vm.search(CveQuery(text, severity, kev, days)) })
         }
-        item { FilterChip(kev, { kev = !kev; vm.search(CveQuery(text, severity, kev, days)) }, label = { Text("Exploited (KEV)") }) }
+        item {
+          var sevMenu by remember { mutableStateOf(false) }
+          androidx.compose.foundation.layout.Box {
+            com.vulft.app.ui.list.SelectableChip(severity != null, severity?.let { Severity.label(it) } ?: "Severity", { sevMenu = true }, trailing = true)
+            androidx.compose.material3.DropdownMenu(expanded = sevMenu, onDismissRequest = { sevMenu = false }) {
+              androidx.compose.material3.DropdownMenuItem(text = { Text("All severities") },
+                onClick = { severity = null; sevMenu = false; vm.search(CveQuery(text, null, kev, days)) })
+              Severity.all.take(4).forEach { sev ->
+                androidx.compose.material3.DropdownMenuItem(
+                  text = { Text(Severity.label(sev)) },
+                  leadingIcon = { androidx.compose.material3.RadioButton(severity == sev, null) },
+                  onClick = { severity = sev; sevMenu = false; vm.search(CveQuery(text, sev, kev, days)) },
+                )
+              }
+            }
+          }
+        }
       }
       LazyRow(contentPadding = PaddingValues(horizontal = 12.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
         items(dayOptions) { (d, label) ->

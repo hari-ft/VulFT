@@ -53,7 +53,7 @@ object Mailer {
 
 object Reports {
   private fun esc(s: String) = s.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;").replace("\"", "&quot;")
-  private fun pct(d: Double?) = d?.let { String.format("%.1f%%", it * 100) } ?: ""
+  private fun pct(d: Double?) = d?.let { String.format(java.util.Locale.US, "%.1f%%", it * 100) } ?: ""
 
   private fun sevColor(s: String) = when (s) { "CRITICAL" -> "#b3261e"; "HIGH" -> "#e8590c"; "MEDIUM" -> "#c99a06"; "LOW" -> "#2f7d32"; else -> "#666" }
 

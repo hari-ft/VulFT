@@ -46,13 +46,31 @@ class VulFTApp : Application() {
 val Context.container: AppContainer get() = (applicationContext as VulFTApp).container
 
 class AppContainer(private val context: Context) {
-  val db: AppDatabase = Room.databaseBuilder(context, AppDatabase::class.java, "vulft.db").addMigrations(AppDatabase.MIGRATION_1_2, AppDatabase.MIGRATION_2_3, AppDatabase.MIGRATION_3_4, AppDatabase.MIGRATION_4_5).fallbackToDestructiveMigration(true).build()
+  // Every upgrade has an explicit migration. Only a downgrade (installing an older build) may reset the data;
+  // a missing migration fails loudly instead of silently wiping your CVEs and settings.
+  val db: AppDatabase = Room.databaseBuilder(context, AppDatabase::class.java, "vulft.db")
+    .addMigrations(AppDatabase.MIGRATION_1_2, AppDatabase.MIGRATION_2_3, AppDatabase.MIGRATION_3_4, AppDatabase.MIGRATION_4_5)
+    .fallbackToDestructiveMigrationOnDowngrade(true)
+    .build()
   val settings = SettingsStore(context)
   val repo = VulnRepository(context, db, settings)
   val appScope = kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.SupervisorJob() + kotlinx.coroutines.Dispatchers.IO)
 
-  /** Full sync + email for new CVEs that match the alert rules. */
-  suspend fun syncAndAlert(progress: suspend (String) -> Unit) {
+  /** Only one sync at a time (automatic and "Sync now" are separate jobs that could otherwise overlap). */
+  private val syncLock = kotlinx.coroutines.sync.Mutex()
+
+  /** Full sync + email for new CVEs that match the alert rules. Returns false if another sync was already running. */
+  suspend fun syncAndAlert(progress: suspend (String) -> Unit): Boolean {
+    if (!syncLock.tryLock()) return false
+    try {
+      syncOnce(progress)
+    } finally {
+      syncLock.unlock()
+    }
+    return true
+  }
+
+  private suspend fun syncOnce(progress: suspend (String) -> Unit) {
     try {
       progress("Scanning installed apps…")
       repo.refreshInstalledApps()
@@ -129,11 +147,19 @@ object SyncScheduler {
     WorkManager.getInstance(context).enqueueUniqueWork(NOW, ExistingWorkPolicy.KEEP, req)
   }
 
-  /** null when idle, otherwise the current progress message. */
+  /**
+   * null when idle, otherwise the current progress message – for "Sync now" *and* automatic syncs.
+   * (A periodic job is always ENQUEUED between runs, so only its RUNNING state counts.)
+   */
   fun progress(context: Context): Flow<String?> =
-    WorkManager.getInstance(context).getWorkInfosForUniqueWorkFlow(NOW).map { infos ->
-      val running = infos.firstOrNull { it.state == WorkInfo.State.RUNNING || it.state == WorkInfo.State.ENQUEUED }
-      running?.let { it.progress.getString(SyncWorker.KEY_PROGRESS) ?: if (it.state == WorkInfo.State.ENQUEUED) "Waiting for network…" else "Syncing…" }
+    WorkManager.getInstance(context).getWorkInfosFlow(androidx.work.WorkQuery.fromUniqueWorkNames(NOW, PERIODIC)).map { infos ->
+      val running = infos.firstOrNull { it.state == WorkInfo.State.RUNNING }
+      val waiting = infos.firstOrNull { it.state == WorkInfo.State.ENQUEUED && it.periodicityInfo == null }
+      when {
+        running != null -> running.progress.getString(SyncWorker.KEY_PROGRESS) ?: "Syncing…"
+        waiting != null -> "Waiting for network…"
+        else -> null
+      }
     }
 }
 

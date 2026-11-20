@@ -1,5 +1,6 @@
 package com.vulft.app
 
+import androidx.core.content.edit
 import android.Manifest
 import android.content.Intent
 import android.os.Build
@@ -53,7 +54,7 @@ class MainActivity : ComponentActivity() {
     if (CriticalNotifier.canNotify(this)) return
     val prefs = getSharedPreferences("vulft_ui", MODE_PRIVATE)
     if (prefs.getBoolean("asked_notifications", false)) return
-    prefs.edit().putBoolean("asked_notifications", true).apply()
+    prefs.edit { putBoolean("asked_notifications", true) }
     askNotifications.launch(Manifest.permission.POST_NOTIFICATIONS)
   }
 }

@@ -184,9 +184,14 @@ fun MsrcTab(tracked: Set<String>, vm: SourceCatalogViewModel = viewModel()) {
         HorizontalDivider()
       }
     }
+    // Same bottom bar as the NVD and CISA KEV tabs.
     if (selected.isNotEmpty()) {
-      Button(onClick = { vm.monitorMsrc(s.results.filter { it.name in selected }); selected = emptySet() },
-        modifier = Modifier.fillMaxWidth().padding(12.dp)) { Text("Monitor ${selected.size} selected") }
+      androidx.compose.material3.BottomAppBar {
+        androidx.compose.material3.TextButton(onClick = { selected = emptySet() }) { Text("Clear") }
+        Spacer(Modifier.weight(1f))
+        Button(onClick = { vm.monitorMsrc(s.results.filter { it.name in selected }); selected = emptySet() },
+          modifier = Modifier.padding(end = 12.dp)) { Text("Monitor ${selected.size} selected") }
+      }
     }
   }
 }

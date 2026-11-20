@@ -39,6 +39,10 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.produceState
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -230,12 +234,18 @@ fun AppIcon(packageName: String, label: String, size: Dp = 40.dp) {
     }
     return
   }
-  val bitmap = remember(packageName) {
-    runCatching { context.packageManager.getApplicationIcon(packageName).toBitmap(96, 96).asImageBitmap() }.getOrNull()
+  // Load icons off the main thread (the picker shows ~400) and keep them in a small memory cache.
+  val bitmap by produceState(initialValue = iconCache.get(packageName), packageName) {
+    if (value == null) {
+      value = withContext(Dispatchers.IO) {
+        runCatching { context.packageManager.getApplicationIcon(packageName).toBitmap(96, 96).asImageBitmap() }.getOrNull()
+      }?.also { iconCache.put(packageName, it) }
+    }
   }
   val shape = RoundedCornerShape(10.dp)
-  if (bitmap != null) {
-    Image(bitmap, null, Modifier.size(size).clip(shape))
+  val bmp = bitmap
+  if (bmp != null) {
+    Image(bmp, null, Modifier.size(size).clip(shape))
   } else {
     Box(Modifier.size(size).background(MaterialTheme.colorScheme.surfaceContainerHighest, shape), contentAlignment = Alignment.Center) {
       Text(label.firstOrNull()?.uppercase() ?: "?", style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -243,4 +253,7 @@ fun AppIcon(packageName: String, label: String, size: Dp = 40.dp) {
   }
 }
 
-fun pct(d: Double?): String = d?.let { String.format("%.1f%%", it * 100) } ?: "–"
+private val iconCache = android.util.LruCache<String, androidx.compose.ui.graphics.ImageBitmap>(200)
+
+/** Always "94.2%" regardless of the phone's language (some locales would print "94,2%"). */
+fun pct(d: Double?): String = d?.let { String.format(java.util.Locale.US, "%.1f%%", it * 100) } ?: "–"

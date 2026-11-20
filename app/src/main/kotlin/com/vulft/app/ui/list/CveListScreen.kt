@@ -194,7 +194,8 @@ fun CveListScreen(
         modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 8.dp),
       )
       val hidden by vm.hiddenNotAffected.collectAsStateWithLifecycle()
-      Row(Modifier.padding(horizontal = 16.dp), verticalAlignment = Alignment.CenterVertically) {
+      // Only once the list has loaded (it used to say "0 hidden" while still loading).
+      if (visible != null && (settings.showNotAffected || hidden > 0)) Row(Modifier.padding(horizontal = 16.dp), verticalAlignment = Alignment.CenterVertically) {
         Text(
           if (settings.showNotAffected) "Showing CVEs that don't affect your installed version"
           else "$hidden hidden: they don't affect your installed version",

@@ -49,6 +49,7 @@ interface VulnDao {
   suspend fun setEpss(id: String, epss: Double, percentile: Double)
   @Query("SELECT id FROM cves") suspend fun allCveIds(): List<String>
   @Query("SELECT id FROM cves WHERE epss IS NULL") suspend fun idsWithoutEpss(): List<String>
+  @Query("DELETE FROM cves WHERE id NOT IN (SELECT cveId FROM product_cves)") suspend fun deleteUntrackedCves()
 
   // ---- links
   @Upsert suspend fun upsertLinks(links: List<ProductCve>)

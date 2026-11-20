@@ -67,7 +67,8 @@ import kotlinx.coroutines.launch
 class SettingsViewModel(app: Application) : AndroidViewModel(app) {
   private val c = app.container
   val settings = c.settings.state
-  val watchedApps = c.repo.apps.map { list -> list.filter { it.watched } }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+  /** Monitored apps and products (hidden source-link rows excluded, so each app appears once). */
+  val watchedApps = c.repo.apps.map { list -> list.filter { it.watched && !com.vulft.app.data.isLinkPkg(it.packageName) } }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
   val syncProgress = SyncScheduler.progress(app).stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
   val message = MutableStateFlow<String?>(null)
 
@@ -133,11 +134,37 @@ class SettingsViewModel(app: Application) : AndroidViewModel(app) {
 }
 
 @Composable
-private fun SettingsScaffold(title: String, onBack: () -> Unit, vm: SettingsViewModel, content: @Composable () -> Unit) {
+private fun SettingsScaffold(
+  title: String,
+  onBack: () -> Unit,
+  vm: SettingsViewModel,
+  /** True when the screen has edits that haven't been saved. */
+  dirty: Boolean = false,
+  onSave: () -> Unit = {},
+  content: @Composable () -> Unit,
+) {
   val message by vm.message.collectAsStateWithLifecycle()
   val snackbar = remember { SnackbarHostState() }
   LaunchedEffect(message) { message?.let { snackbar.showSnackbar(it); vm.message.value = null } }
-  Scaffold(topBar = { BackTopBar(title, onBack) }, snackbarHost = { SnackbarHost(snackbar) }) { padding ->
+  // Leaving with unsaved edits asks first, instead of silently throwing them away.
+  var confirmLeave by remember { mutableStateOf(false) }
+  val tryBack = { if (dirty) confirmLeave = true else onBack() }
+  androidx.activity.compose.BackHandler(enabled = dirty) { confirmLeave = true }
+  if (confirmLeave) {
+    androidx.compose.material3.AlertDialog(
+      onDismissRequest = { confirmLeave = false },
+      title = { Text("Save changes?") },
+      text = { Text("You changed settings on this screen but didn't save them.") },
+      confirmButton = { Button(onClick = { onSave(); confirmLeave = false; onBack() }) { Text("Save") } },
+      dismissButton = {
+        Row {
+          TextButton(onClick = { confirmLeave = false; onBack() }) { Text("Discard") }
+          TextButton(onClick = { confirmLeave = false }) { Text("Keep editing") }
+        }
+      },
+    )
+  }
+  Scaffold(topBar = { BackTopBar(title, tryBack) }, snackbarHost = { SnackbarHost(snackbar) }) { padding ->
     Column(Modifier.padding(padding).fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
       content()
     }
@@ -178,7 +205,7 @@ fun SettingsScreen(onBack: () -> Unit, onOpenApps: () -> Unit, onOpenCatalog: ()
   var gh by remember { mutableStateOf(s.githubToken) }
 
   SettingsScaffold("Settings", onBack, vm) {
-    NavRow("Apps to monitor", "${watched.size} monitored · pick apps and their NVD product", onOpenApps)
+    NavRow("Apps to monitor", "${watched.size} monitored · link apps to NVD, Microsoft or OSV.dev", onOpenApps)
     NavRow("Email server (SMTP)", if (s.smtp.host.isNotBlank()) "${s.smtp.host}:${s.smtp.port}" else "Not configured", onOpenSmtp)
     NavRow("Email alerts", (if (s.alerts.enabled) "On · ${s.alerts.severities.joinToString { Severity.label(it) }}" else "Off") +
       " · ${s.smtp.recipientList().size} recipients", onOpenAlerts)
@@ -210,7 +237,7 @@ fun SettingsScreen(onBack: () -> Unit, onOpenApps: () -> Unit, onOpenCatalog: ()
       Row(verticalAlignment = Alignment.CenterVertically) {
         Column(Modifier.weight(1f)) {
           Text("Show CVEs for installed apps", style = MaterialTheme.typography.bodyLarge)
-          Text("Monitors apps automatically when VulFT knows their NVD product. No need to tick them.",
+          Text("Monitors apps automatically when they're linked to a data source (NVD, Microsoft or OSV.dev). No need to tick them.",
             style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
         Switch(s.autoMonitor, { vm.setAuto(enabled = it) })
@@ -312,7 +339,7 @@ fun SmtpScreen(onBack: () -> Unit, vm: SettingsViewModel = viewModel()) {
   // Recipients are edited in Email alerts; keep whatever is saved there.
   val cfg = SmtpConfig(host.trim(), port.toIntOrNull() ?: 587, security, user.trim(), pass, from.trim(), s.smtp.recipients)
 
-  SettingsScaffold("Email server (SMTP)", onBack, vm) {
+  SettingsScaffold("Email server (SMTP)", onBack, vm, dirty = cfg != s.smtp, onSave = { vm.saveSmtp(cfg) }) {
     SectionCard("Server") {
       OutlinedTextField(host, { host = it }, label = { Text("SMTP host (e.g. smtp.gmail.com)") }, singleLine = true, modifier = Modifier.fillMaxWidth())
       OutlinedTextField(port, { port = it.filter(Char::isDigit) }, label = { Text("Port") }, singleLine = true, modifier = Modifier.fillMaxWidth(),
@@ -376,7 +403,8 @@ fun AlertRulesScreen(onBack: () -> Unit, vm: SettingsViewModel = viewModel()) {
   LaunchedEffect(rules) { matchCount = vm.countMatching(rules) }
   val categories = watched.map { it.category }.distinct().sorted()
 
-  SettingsScaffold("Email alerts", onBack, vm) {
+  SettingsScaffold("Email alerts", onBack, vm, dirty = rules != s.alerts || sendTo.trim() != s.smtp.recipients.trim(),
+    onSave = { vm.saveAlerts(rules, sendTo) }) {
     SectionCard("Alerts") {
       Row(verticalAlignment = Alignment.CenterVertically) {
         Column(Modifier.weight(1f)) {

@@ -34,5 +34,8 @@ Build: `gradlew assembleDebug` → `app/build/outputs/apk/debug/app-debug.apk`
 ## Notes
 - Uses `QUERY_ALL_PACKAGES` to list installed apps: fine for personal/sideloaded use, restricted on Google Play.
 - No API keys are compiled into the APK; each user enters their own in Settings.
-- SMTP password is stored in app-private storage (backup disabled).
+- SMTP password, NVD API key and GitHub token are encrypted with an AES key held in the Android Keystore; backup and device transfer are disabled.
 - NVD lists every platform for a product (e.g. Chrome desktop CVEs show for Chrome Android). Use the "My version affected" filter to narrow.
+- Release builds are shrunk with R8 (`app/proguard-rules.pro`); the APK is ~2.6 MB.
+- Versioning: major 1–99, minor 1–9, patch 1–9 (`appMajor/appMinor/appPatch` in `app/build.gradle.kts`; versionCode = major*100 + minor*10 + patch).
+- Tests: `gradlew testDebugUnitTest` (JVM) and `app/src/androidTest` (on-device; run with `adb shell am instrument` to avoid the app being uninstalled).

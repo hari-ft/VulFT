@@ -11,6 +11,8 @@ import android.os.Build
 import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
 import androidx.core.content.ContextCompat
+import androidx.core.content.edit
+import androidx.core.net.toUri
 import com.vulft.app.data.Affected
 import com.vulft.app.data.AppSettings
 import com.vulft.app.data.VulnItem
@@ -31,7 +33,6 @@ object CriticalNotifier {
       NotificationManagerCompat.from(context).areNotificationsEnabled()
 
   fun ensureChannel(context: Context) {
-    if (Build.VERSION.SDK_INT < 26) return
     val nm = context.getSystemService(NotificationManager::class.java)
     if (nm.getNotificationChannel(CHANNEL) == null) {
       nm.createNotificationChannel(NotificationChannel(CHANNEL, "Critical exploited vulnerabilities", NotificationManager.IMPORTANCE_HIGH).apply {
@@ -50,7 +51,9 @@ object CriticalNotifier {
   fun process(context: Context, items: List<VulnItem>, s: AppSettings): Int {
     if (!s.notifyCriticalExploited) return 0
     val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
-    val seen = prefs.getStringSet(KEY, emptySet())!!.toMutableSet()
+    // Ordered oldest → newest, so trimming drops the oldest (a plain Set would drop random entries).
+    val seenList = readSeen(prefs)
+    val seen = seenList.toHashSet()
     val fresh = qualifying(items, s).filter { it.key !in seen }.sortedByDescending { it.cve.cvssScore ?: 0.0 }
     if (fresh.isEmpty()) return 0
     if (!canNotify(context)) return 0 // try again after the user allows notifications
@@ -73,11 +76,17 @@ object CriticalNotifier {
     } catch (_: SecurityException) {
       return 0
     }
-    seen += fresh.map { it.key }
-    // Keep the remembered set bounded.
-    prefs.edit().putStringSet(KEY, seen.toList().takeLast(3000).toSet()).apply()
+    val updated = (seenList + fresh.map { it.key }).takeLast(3000)
+    prefs.edit { putString(KEY_LIST, updated.joinToString("\n")).remove(KEY) }
     return fresh.size
   }
+
+  private const val KEY_LIST = "keys_ordered"
+
+  /** Notified app+CVE keys, oldest first (migrates the earlier unordered set). */
+  private fun readSeen(prefs: android.content.SharedPreferences): List<String> =
+    prefs.getString(KEY_LIST, null)?.split('\n')?.filter { it.isNotBlank() }
+      ?: prefs.getStringSet(KEY, emptySet()).orEmpty().toList()
 
   private fun build(context: Context, cveId: String?, title: String, text: String): NotificationCompat.Builder {
     val open = Intent(context, MainActivity::class.java).apply {
@@ -101,6 +110,6 @@ object CriticalNotifier {
     if (Build.VERSION.SDK_INT >= 30) !context.packageManager.isAutoRevokeWhitelisted else null
 
   fun pauseIfUnusedSettingsIntent(context: Context): Intent =
-    if (Build.VERSION.SDK_INT >= 30) Intent(Intent.ACTION_AUTO_REVOKE_PERMISSIONS, android.net.Uri.parse("package:${context.packageName}"))
-    else Intent(android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS, android.net.Uri.parse("package:${context.packageName}"))
+    if (Build.VERSION.SDK_INT >= 30) Intent(Intent.ACTION_AUTO_REVOKE_PERMISSIONS, "package:${context.packageName}".toUri())
+    else Intent(android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS, "package:${context.packageName}".toUri())
 }

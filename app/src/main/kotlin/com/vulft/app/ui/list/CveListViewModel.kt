@@ -15,6 +15,8 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.debounce
+import kotlinx.coroutines.flow.mapLatest
 import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
@@ -55,7 +57,9 @@ class CveListViewModel(app: Application) : AndroidViewModel(app) {
   val message = MutableStateFlow<String?>(null)
 
   // One item per app + CVE: the same CVE from NVD, MSRC and OSV links is merged.
-  private val allItems = c.repo.rows.map { rows -> VulnItem.dedupe(rows.map(VulnItem::from)) }.flowOn(Dispatchers.Default)
+  // A sync writes many times in a row: wait for a short pause and drop stale work, so the list recalculates once.
+  @OptIn(kotlinx.coroutines.FlowPreview::class, kotlinx.coroutines.ExperimentalCoroutinesApi::class)
+  private val allItems = c.repo.rows.debounce(300).mapLatest { rows -> VulnItem.dedupe(rows.map(VulnItem::from)) }.flowOn(Dispatchers.Default)
     .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
 
   /** By default CVEs that don't affect the installed version are hidden (Settings → "Show CVEs that don't affect my version"). */
@@ -82,7 +86,8 @@ class CveListViewModel(app: Application) : AndroidViewModel(app) {
   /** CVEs changed since the last sync that the user hasn't opened (drives the "Updated (N)" chip). */
   val updatedCount = items.map { list -> list.orEmpty().count { it.cve.updatedAt > 0 && !it.cve.updateSeen } }
     .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), 0)
-  val watchedCount = c.repo.apps.map { apps -> apps.count { it.watched } }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), -1)
+  // Hidden source-link rows aren't apps of their own.
+  val watchedCount = c.repo.apps.map { apps -> apps.count { it.watched && !com.vulft.app.data.isLinkPkg(it.packageName) } }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), -1)
   val syncProgress = SyncScheduler.progress(app).stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
   val settings = c.settings.state
 

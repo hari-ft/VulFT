@@ -196,8 +196,7 @@ class VulnRepository(private val context: Context, private val db: AppDatabase, 
   suspend fun searchCatalog(keyword: String, start: Int, vendor: String?): CpePage =
     NvdClient.searchProductsPage(keyword, settings.current.effectiveNvdKey, start, vendor)
 
-  private var kevCache: List<KevProduct>? = null
-  suspend fun kevProducts(): List<KevProduct> = kevCache ?: KevClient.products(KevClient.fetch()).also { kevCache = it }
+  suspend fun kevProducts(): List<KevProduct> = KevClient.products(kevEntries())
 
   /** Finds the NVD vendor:product for a CISA KEV product by looking at its CVEs. */
   suspend fun resolveKev(p: KevProduct): CpeSuggestion? {
@@ -250,8 +249,11 @@ class VulnRepository(private val context: Context, private val db: AppDatabase, 
     }
 
     try {
+      // CVEs that were only opened from "Search all CVEs" (not linked to anything you track) are dropped,
+      // so the database and the daily EPSS refresh don't keep growing. Searching again re-fetches them.
+      dao.deleteUntrackedCves()
       progress("Downloading CISA KEV catalog…")
-      val kev = KevClient.fetch()
+      val kev = KevClient.fetch().also { kevEntriesCache = it; kevFetchedAt = System.currentTimeMillis() }
       val known = dao.allCveIds().toHashSet()
       db.withTransaction {
         dao.clearKev()
@@ -432,8 +434,14 @@ class VulnRepository(private val context: Context, private val db: AppDatabase, 
 
   suspend fun markUpdateSeen(id: String) = dao.markUpdateSeen(id)
 
+  // CISA KEV catalog for the catalog tab and search; refreshed after 6 hours so a long-running app doesn't go stale.
   private var kevEntriesCache: List<com.vulft.app.data.remote.KevEntry>? = null
-  private suspend fun kevEntries() = kevEntriesCache ?: KevClient.fetch().also { kevEntriesCache = it }
+  private var kevFetchedAt = 0L
+  private suspend fun kevEntries(): List<com.vulft.app.data.remote.KevEntry> {
+    val cached = kevEntriesCache
+    if (cached != null && System.currentTimeMillis() - kevFetchedAt < Duration.ofHours(6).toMillis()) return cached
+    return KevClient.fetch().also { kevEntriesCache = it; kevFetchedAt = System.currentTimeMillis() }
+  }
 
   /**
    * Search CVEs across the databases that can be searched:

@@ -220,9 +220,26 @@ data class VulnItem(val row: CveRow, val affected: Affected, val rangeList: List
           ?: group.first()
       }
 
+    // Parsed JSON is cached by its text: the list re-maps ~16k rows on every database change, and
+    // re-parsing every range/fix each time made the UI freeze for 1–2 s.
+    private val rangeCache = Lru<String, List<CpeRange>>(40_000)
+    private val fixCache = Lru<String, Optional<FixInfo>>(40_000)
+    private class Optional<T>(val value: T?)
+
+    private fun ranges(json: String): List<CpeRange> {
+      if (json.isBlank() || json == "[]") return emptyList()
+      return rangeCache[json] ?: runCatching { AppJson.decodeFromString(ListSerializer(CpeRange.serializer()), json) }
+        .getOrDefault(emptyList()).also { rangeCache[json] = it }
+    }
+
+    private fun fix(json: String): FixInfo? {
+      if (json.isBlank()) return null
+      return (fixCache[json] ?: Optional(parseFix(json)).also { fixCache[json] = it }).value
+    }
+
     fun from(row: CveRow): VulnItem {
-      val ranges = runCatching { AppJson.decodeFromString(ListSerializer(CpeRange.serializer()), row.ranges) }.getOrDefault(emptyList())
-      val fix = parseFix(row.fixJson)
+      val ranges = ranges(row.ranges)
+      val fix = fix(row.fixJson)
       val affected = when {
         fix?.affected != null -> runCatching { Affected.valueOf(fix.affected) }.getOrDefault(Affected.UNKNOWN)
         // MSRC: compare your build number with the fixed build.
@@ -236,6 +253,15 @@ data class VulnItem(val row: CveRow, val affected: Affected, val rangeList: List
       return VulnItem(row, affected, ranges, fix)
     }
   }
+}
+
+/** Small thread-safe LRU cache (plain JVM, so it also works in unit tests). */
+class Lru<K, V>(private val max: Int) {
+  private val map = object : LinkedHashMap<K, V>(256, 0.75f, true) {
+    override fun removeEldestEntry(eldest: MutableMap.MutableEntry<K, V>?) = size > max
+  }
+  @Synchronized operator fun get(key: K): V? = map[key]
+  @Synchronized operator fun set(key: K, value: V) { map[key] = value }
 }
 
 object Severity {

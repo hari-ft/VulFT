@@ -220,7 +220,7 @@ fun CveDetailScreen(cveId: String, onBack: () -> Unit) {
         }
       }
 
-      SectionCard("Affected apps on this device") {
+      SectionCard("Your affected apps and products") {
         if (apps.isEmpty()) Text("None of your monitored apps or products is linked to this CVE.", style = MaterialTheme.typography.bodyMedium,
           color = MaterialTheme.colorScheme.onSurfaceVariant)
         apps.forEachIndexed { idx, i ->

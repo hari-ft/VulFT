@@ -16,7 +16,7 @@ val signingProps = Properties().apply {
 // App version (see scheme in defaultConfig).
 val appMajor = 1
 val appMinor = 1
-val appPatch = 8
+val appPatch = 9
 require(appMajor in 1..99 && appMinor in 1..9 && appPatch in 1..9) { "Version out of range: major 1-99, minor 1-9, patch 1-9" }
 
 android {
@@ -30,6 +30,7 @@ android {
     // Bump patch each release; after patch 9 → minor+1, patch 1; after minor 9 → major+1, minor 1.
     versionCode = appMajor * 100 + appMinor * 10 + appPatch
     versionName = "$appMajor.$appMinor.$appPatch"
+    testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
   }
 
   signingConfigs {
@@ -46,7 +47,9 @@ android {
   buildTypes {
     release {
       signingConfig = signingConfigs.findByName("release")
-      isMinifyEnabled = false
+      // R8: removes unused code (most of the large icon library) and resources. Keep rules in proguard-rules.pro.
+      isMinifyEnabled = true
+      isShrinkResources = true
       proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
     }
   }

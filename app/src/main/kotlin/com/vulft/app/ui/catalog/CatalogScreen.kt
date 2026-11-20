@@ -1,5 +1,6 @@
 package com.vulft.app.ui.catalog
 
+import androidx.compose.runtime.mutableIntStateOf
 import com.vulft.app.ui.theme.MonoType
 import com.vulft.app.ui.common.RansomwareBadge
 import android.app.Application
@@ -158,7 +159,7 @@ class CatalogViewModel(app: Application) : AndroidViewModel(app) {
 
 @Composable
 fun CatalogScreen(onBack: () -> Unit, vm: CatalogViewModel = viewModel()) {
-  var tab by remember { mutableStateOf(0) }
+  var tab by remember { mutableIntStateOf(0) }
   var manual by remember { mutableStateOf(false) }
   val selS by vm.selectedSearch.collectAsStateWithLifecycle()
   val selK by vm.selectedKev.collectAsStateWithLifecycle()

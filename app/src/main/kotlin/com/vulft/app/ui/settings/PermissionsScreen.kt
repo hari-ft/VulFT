@@ -1,12 +1,13 @@
 package com.vulft.app.ui.settings
 
+import androidx.core.net.toUri
+import androidx.core.content.edit
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageInfo
 import android.content.pm.PackageManager
 import android.content.pm.PermissionInfo
 import android.net.ConnectivityManager
-import android.net.Uri
 import android.os.Build
 import android.os.PowerManager
 import android.provider.Settings
@@ -64,6 +65,8 @@ private val purposes = mapOf(
 
 private fun typeOf(pi: PermissionInfo?): String {
   if (pi == null) return "Custom"
+  // protectionLevel/PROTECTION_MASK_BASE are only used on Android 8 (API 26–27), where getProtection() doesn't exist.
+  @Suppress("DEPRECATION")
   val base = if (Build.VERSION.SDK_INT >= 28) pi.protection else pi.protectionLevel and PermissionInfo.PROTECTION_MASK_BASE
   return when (base) {
     PermissionInfo.PROTECTION_NORMAL -> "Normal"
@@ -139,7 +142,7 @@ fun PermissionsScreen(onBack: () -> Unit) {
           OutlinedButton(onClick = {
             val p = context.getSharedPreferences("vulft_ui", Context.MODE_PRIVATE)
             if (Build.VERSION.SDK_INT >= 33 && !p.getBoolean("notif_denied_once", false)) {
-              p.edit().putBoolean("notif_denied_once", true).apply()
+              p.edit { putBoolean("notif_denied_once", true) }
               askNotify.launch(android.Manifest.permission.POST_NOTIFICATIONS)
             } else {
               // After a refusal Android won't show the prompt again: open the app's notification settings instead.
@@ -176,7 +179,7 @@ fun PermissionsScreen(onBack: () -> Unit) {
       }
 
       Button(onClick = {
-        context.startActivity(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:${context.packageName}")).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+        context.startActivity(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, "package:${context.packageName}".toUri()).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
       }, modifier = Modifier.fillMaxWidth()) { Text("Open Android app settings for VulFT") }
       Text("Normal and special permissions are granted when the app is installed and can't be switched off individually; Android lets you uninstall or restrict background use instead.",
         style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)

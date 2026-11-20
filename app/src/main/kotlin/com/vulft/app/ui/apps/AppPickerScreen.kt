@@ -110,7 +110,8 @@ class AppPickerViewModel(app: Application) : AndroidViewModel(app) {
 
   fun refresh() = viewModelScope.launch { loading.value = true; runCatching { repo.refreshInstalledApps() }; loading.value = false }
   fun setWatched(pkg: String, on: Boolean) = viewModelScope.launch { repo.setWatched(pkg, on) }
-  fun watchAllMapped() = viewModelScope.launch { repo.setWatched(apps.value.orEmpty().filter { it.app.cpeKey() != null }.map { it.app.packageName }, true) }
+  /** Monitor every listed app linked to any source (NVD, Microsoft or OSV), not just NVD. */
+  fun watchAllMapped() = viewModelScope.launch { repo.setWatched(apps.value.orEmpty().filter { it.isLinked }.map { it.app.packageName }, true) }
   fun unwatchAll() = viewModelScope.launch { repo.setWatched(apps.value.orEmpty().map { it.app.packageName }, false) }
   fun setMapping(pkg: String, vendor: String?, product: String?, watch: Boolean, version: String? = null) = viewModelScope.launch {
     repo.setMapping(pkg, vendor, product)
@@ -151,7 +152,7 @@ fun AppPickerScreen(onBack: () -> Unit, onOpenCatalog: () -> Unit, vm: AppPicker
         IconButton(onClick = vm::refresh) { Icon(Icons.Default.Refresh, "Rescan apps") }
         IconButton(onClick = { menu = true }) { Icon(Icons.Default.MoreVert, "More") }
         DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
-          DropdownMenuItem(text = { Text("Monitor all listed apps with a CPE") }, onClick = { vm.watchAllMapped(); menu = false })
+          DropdownMenuItem(text = { Text("Monitor all listed apps that have a data source") }, onClick = { vm.watchAllMapped(); menu = false })
           DropdownMenuItem(text = { Text("Stop monitoring all listed apps") }, onClick = { vm.unwatchAll(); menu = false })
         }
       }
